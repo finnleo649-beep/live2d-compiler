@@ -287,7 +287,12 @@ def main() -> int:
         print("   未发现明显问题")
 
     # ---------- 交付到 VTS ----------
-    if os.path.isdir(VTS):
+    # L2D_NO_DEPLOY=1：测试模式，不往 VTube Studio 里塞模型（输出到 storage/outputs）
+    no_deploy = os.environ.get("L2D_NO_DEPLOY", "").strip().lower() in ("1", "true", "yes")
+    if no_deploy:
+        out_dir = os.path.join(PROJ, "storage", "outputs", name)
+        print("\n[测试模式] 跳过 VTS 部署，输出到：%s" % out_dir)
+    elif os.path.isdir(VTS):
         out_dir = os.path.join(VTS, name)
     else:
         out_dir = os.path.join(PROJ, "storage", "outputs", name)
@@ -301,7 +306,9 @@ def main() -> int:
     print(" 完成！")
     print(" 模型目录 : %s" % out_dir)
     print(" 质量结论 : %s（详见 quality_report.json）" % qr["verdict"])
-    if os.path.isdir(VTS):
+    if no_deploy:
+        print(" [测试模式] 未部署到 VTube Studio（L2D_NO_DEPLOY=1）")
+    elif os.path.isdir(VTS):
         print(" VTube Studio 里的模型名 : %s" % name)
         print(" 打开 VTS → 模型选择，找到「%s」即可。" % name)
     print("=" * 60)
