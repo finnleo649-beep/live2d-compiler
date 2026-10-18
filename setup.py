@@ -171,6 +171,71 @@ def models_ready() -> bool:
     return True
 
 
+# ============================================================
+#  psd2live 本地补丁
+# ============================================================
+# 作用：给 psd2live 的 CLI 暴露眨眼参数，并把默认闭合度从 72% 改到 95%。
+# 背景：psd2live 默认 blinkCorner=34 + blinkDepth=38，眼睛只能闭到 72% 高度，
+#       视觉上像"半闭眼"；20 + 75 = 95% 才是真正闭合。
+# 说明：完整 diff 见 patches/psd2live-blink.patch（存档 + 人工审查用）。
+
+BLINK_PATCH_DESC = "眨眼参数（blinkDepth/blinkCorner/eyelashSquash）"
+
+
+def apply_psd2live_patches(p2l_dir: str) -> bool:
+    """给 psd2live 源码应用本地补丁（幂等，可反复运行）。"""
+    main_kt = os.path.join(p2l_dir, "src", "main", "kotlin", "io", "github", "psd2live", "Main.kt")
+    if not os.path.isfile(main_kt):
+        print("  [警告] 找不到 %s" % main_kt)
+        return False
+
+    with open(main_kt, encoding="utf-8") as f:
+        content = f.read()
+
+    # 幂等：已应用则跳过
+    if "blinkDepth" in content and "--blink-depth" in content:
+        print("  %s: 已应用" % BLINK_PATCH_DESC)
+        return True
+
+    original = content
+
+    # 1) import RigTuning
+    old = "import io.github.psd2live.agent.AgentMcpController\n"
+    new = old + "import io.github.psd2live.core.RigTuning\n"
+    if old in content and new not in content:
+        content = content.replace(old, new, 1)
+
+    # 2) PipelineConfig 里加 rigTuning
+    old = '\t\tbodyStrength = options.float("--body-strength", 1f),\n'
+    new = old + (
+        "\t\t// Blink rig tuning: closed-eye curve sits at (blinkCorner + blinkDepth)% of the eye-white height.\n"
+        "\t\t// The library default (34 + 38 = 72%) leaves the eyes visibly half-open; 20 + 75 = 95% closes them.\n"
+        "\t\trigTuning = RigTuning(\n"
+        '\t\t\tblinkDepth = options.float("--blink-depth", 75f).coerceIn(0f, 80f),\n'
+        '\t\t\tblinkCorner = options.float("--blink-corner", 20f).coerceIn(0f, 80f),\n'
+        '\t\t\teyelashSquash = options.float("--eyelash-squash", 80f).coerceIn(0f, 150f),\n'
+        "\t\t),\n"
+    )
+    if old in content:
+        content = content.replace(old, new, 1)
+
+    # 3) CLI 参数名列表
+    old = '"--head-strength", "--body-strength"'
+    new = '"--head-strength", "--body-strength", "--blink-depth", "--blink-corner", "--eyelash-squash"'
+    if old in content and new not in content:
+        content = content.replace(old, new, 1)
+
+    if content == original:
+        print("  [警告] %s 未能应用（源码结构可能已变化）" % BLINK_PATCH_DESC)
+        print("         请手动参考 patches/psd2live-blink.patch")
+        return False
+
+    with open(main_kt, "w", encoding="utf-8", newline="") as f:
+        f.write(content)
+    print("  %s: 已应用" % BLINK_PATCH_DESC)
+    return True
+
+
 def main() -> int:
     total = 5
     print("=" * 64)
@@ -206,7 +271,7 @@ def main() -> int:
     # ---------- 2. psd2live ----------
     step(2, total, "psd2live 源码（分层 → 模型）")
     if os.path.isfile(os.path.join(P2L, "gradlew.bat")):
-        print("  已存在，跳过")
+        print("  已存在，跳过下载")
     else:
         if os.path.isdir(P2L):
             shutil.rmtree(P2L)
@@ -214,6 +279,7 @@ def main() -> int:
         if not os.path.isfile(os.path.join(P2L, "gradlew.bat")):
             print("  [错误] 解压后找不到 gradlew.bat")
             return 1
+    apply_psd2live_patches(P2L)
     print("  psd2live 就绪")
 
     # ---------- 3. see-through ----------

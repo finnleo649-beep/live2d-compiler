@@ -1,0 +1,33 @@
+--- a/src/main/kotlin/io/github/psd2live/Main.kt
++++ b/src/main/kotlin/io/github/psd2live/Main.kt
+@@ -16,6 +16,7 @@
+ import androidx.compose.ui.window.WindowExceptionHandlerFactory
+ import androidx.compose.ui.window.application
+ import io.github.psd2live.agent.AgentMcpController
++import io.github.psd2live.core.RigTuning
+ import io.github.psd2live.project.WorkspaceStore
+ import io.github.psd2live.ui.state.DesktopWorkspace
+ import io.github.psd2live.core.PSD2LivePipeline
+@@ -87,6 +88,13 @@
+ 		meshWrap = options.float("--mesh-wrap", 0f).takeIf { it.isFinite() }?.coerceIn(io.github.psd2live.core.MeshWrap.range) ?: 0f,
+ 		headTurnStrength = options.float("--head-strength", 1f),
+ 		bodyStrength = options.float("--body-strength", 1f),
++		// Blink rig tuning: closed-eye curve sits at (blinkCorner + blinkDepth)% of the eye-white height.
++		// The library default (34 + 38 = 72%) leaves the eyes visibly half-open; 20 + 75 = 95% closes them.
++		rigTuning = RigTuning(
++			blinkDepth = options.float("--blink-depth", 75f).coerceIn(0f, 80f),
++			blinkCorner = options.float("--blink-corner", 20f).coerceIn(0f, 80f),
++			eyelashSquash = options.float("--eyelash-squash", 80f).coerceIn(0f, 150f),
++		),
+ 		meshOnly = options.flags.contains("--mesh-only"),
+ 		generateDeformers = !options.flags.contains("--no-deformers"),
+ 		exportMotions = !options.flags.contains("--no-motions"),
+@@ -315,7 +323,7 @@
+ 
+ 	companion object {
+ 		internal val flagNames = setOf("--no-upscale-neural-alpha", "--upscale-neural-alpha", "--mesh-pixels", "--no-physics", "--no-cmo3", "--no-moc3", "--mesh-only", "--no-deformers", "--no-motions", "--no-json")
+-		internal val valueNames = setOf("--upscale", "--upscale-noise", "--upscale-python", "--nunif-dir", "--upscale-model", "--upscale-tile", "--input", "--output", "--lang", "--atlas", "--mesh-spacing", "--mesh-wrap", "--head-strength", "--body-strength")
++		internal val valueNames = setOf("--upscale", "--upscale-noise", "--upscale-python", "--nunif-dir", "--upscale-model", "--upscale-tile", "--input", "--output", "--lang", "--atlas", "--mesh-spacing", "--mesh-wrap", "--head-strength", "--body-strength", "--blink-depth", "--blink-corner", "--eyelash-squash")
+ 		fun parse(arguments: Array<String>): CliOptions {
+ 			val values = linkedMapOf<String, String>()
+ 			val flags = linkedSetOf<String>()
