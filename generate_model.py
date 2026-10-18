@@ -34,6 +34,11 @@ VTS = r"D:\steam\steamapps\common\VTube Studio\VTube Studio_Data\StreamingAssets
 # 64 = psd2live 默认（太粗，转头折角）；32 = 明显更平滑；24/16 更精细但更慢。
 MESH_SPACING = int(os.environ.get("L2D_MESH_SPACING", "32"))
 
+# 让 .deps 里的第三方库（psd-tools 等）和项目自身包可被导入
+for _p in (DEPS, PROJ):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 SEE_SCRIPT = os.path.join("inference", "scripts", "inference_psd_blockswap.py")
 
 
@@ -190,10 +195,26 @@ def main() -> int:
         return fail("未找到分层 PSD：%s" % psd)
     print("\n[2/3] 分层完成：%s" % psd)
 
+    # ---------- Step 2.5: 图层绘制顺序修正 ----------
+    # psd2live 按 PSD 图层顺序决定 drawOrder；see-through 输出的顺序不一定符合视觉层次
+    # （例如发箍 headwear 排在头发下面会被遮挡）。这里按语义优先级重排。
+    work_psd_name = "work_%s.psd" % tag
+    work_psd_path = os.path.join(P2L, work_psd_name)
+    print("\n[2.5/3] 修正图层绘制顺序（配件遮挡问题）...")
+    try:
+        from pipeline.stages.reorder_psd import reorder_psd
+        rep = reorder_psd(psd, work_psd_path)
+        moved = rep.get("moved", [])
+        if moved:
+            print("   调整了 %d 个图层位置" % len(moved))
+        else:
+            print("   顺序已符合规范，无需调整")
+    except Exception as e:
+        print("   [警告] 重排失败，使用原始顺序：%s" % e)
+        shutil.copy2(psd, work_psd_path)
+
     # ---------- Step 3: 绑定 + 导出 ----------
     print("\n[3/3] 绑定与导出模型（约 20 秒）...")
-    work_psd_name = "work_%s.psd" % tag
-    shutil.copy2(psd, os.path.join(P2L, work_psd_name))
 
     env2 = os.environ.copy()
     env2["JAVA_HOME"] = JDK
