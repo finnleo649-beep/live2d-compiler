@@ -195,6 +195,27 @@ def main() -> int:
         return fail("未找到分层 PSD：%s" % psd)
     print("\n[2/3] 分层完成：%s" % psd)
 
+    # ---------- Step 2.4: 分层质量审查（对比原图）----------
+    audit_report = None
+    print("\n[2.4/3] 审查分层质量（以原图为基准）...")
+    try:
+        from pipeline.stages.audit_layers import audit_layers
+        audit_dir = os.path.join(PROJ, "storage", "outputs", "audit_%s" % tag)
+        audit_report = audit_layers(os.path.join(SEE, work_png_rel), psd, audit_dir)
+        print("   结论 : %s" % audit_report["verdict"])
+        print("   可疑区域: %d 个（高严重度 %d 个）" % (
+            audit_report.get("suspect_region_count", 0),
+            audit_report.get("high_severity_count", 0),
+        ))
+        for r in audit_report.get("suspect_regions", [])[:5]:
+            print("     [%-6s] bbox=%s  avg_diff=%.0f" % (r["severity"], r["bbox"], r["avg_diff"]))
+        if audit_report.get("suspect_regions"):
+            print("   热力图: %s" % audit_report["heatmap"])
+        else:
+            print("   未发现明显问题")
+    except Exception as e:
+        print("   [警告] 审查失败（不影响生成）：%s" % e)
+
     # ---------- Step 2.5: 图层绘制顺序修正 ----------
     # psd2live 按 PSD 图层顺序决定 drawOrder；see-through 输出的顺序不一定符合视觉层次
     # （例如发箍 headwear 排在头发下面会被遮挡）。这里按语义优先级重排。
@@ -238,6 +259,20 @@ def main() -> int:
     # ---------- 质量检查（半自动定位：明确标出要修的地方）----------
     print("\n[质检] 检查模型质量...")
     qr = quality_check(built)
+
+    # 把分层审查结果并入质量报告
+    if audit_report is not None:
+        qr["layer_audit"] = audit_report
+        if audit_report.get("verdict") in ("needs_review", "failed"):
+            qr["issues"].append(
+                "分层审查发现 %d 个可疑区域（高严重度 %d 个），详见 audit_diff.png" % (
+                    audit_report.get("suspect_region_count", 0),
+                    audit_report.get("high_severity_count", 0),
+                )
+            )
+            if qr["verdict"] == "ok":
+                qr["verdict"] = "needs_review"
+
     try:
         with open(os.path.join(built, "quality_report.json"), "w", encoding="utf-8") as f:
             json.dump(qr, f, ensure_ascii=False, indent=2)
